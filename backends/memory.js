@@ -30,6 +30,19 @@
         this.total = 0;
     };
 
+
+    /**
+     * Initialize the training from a data source, instead of rebuilding each time
+     * @param backup
+     */
+    function initialize(backup) {
+        _cats = backup._cats;
+        _words = backup._words;
+        _trainingCount = backup._trainingCount;
+        _totalWords = backup._totalWords;
+        _totalCats = backup._totalCats;
+    }
+
     /**
      * Get the total number of times a word appears
      */
@@ -138,21 +151,37 @@
         return _cats[category].totalWords;
     }
 
+    function getWordCount(word) {
+        return (_words[word] && _words[word].total) || 0;
+    }
+
     /**
      * Sorts the words object and returns an array
      */
-    function _sortWords(category) {
-        var keys = Object.keys(_cats[category].words),
+    function _sortWords() {
+        var unique = {},
             wordList = [];
 
         function wordSorter(a, b) {
             return a.count - b.count;
         }
 
-        keys.forEach(function(key) {
+        Object.keys(_cats).forEach(function(category) {
+            var keys = Object.keys(_cats[category].words);
+
+            keys.forEach(function(key) {
+                var count = _cats[category].words[key];
+                if(!(key in unique)) {
+                    unique[key] = 0;
+                }
+                unique[key] += count;
+            });
+        });
+
+        Object.keys(unique).forEach(function(key) {
             wordList.push({
                 word: key,
-                count: _cats[category].words[key]
+                count: unique[key]
             });
         });
 
@@ -163,22 +192,46 @@
      * Returns the contents of the backend
      */
     function dump() {
+        var outputObj = {};
         var contents = "";
-        contents += "========";
-        contents += "backend dump";
-        contents += "========";
+        // contents += "========";
+        // contents += "backend dump";
+        // contents += "========";
         // contents += JSON.stringify(_cats);
         // contents += JSON.stringify(_words);
         // contents += JSON.stringify(_trainingCount);
         // contents += JSON.stringify(_totalWords);
         // contents += JSON.stringify(_totalCats);
-        var words = _sortWords("negative");
-        words.forEach(function(word) {
-            contents += "\n" + word.word + ": " + word.count;
-        });
-        contents += "========";
+        outputObj._cats = _cats;
+        outputObj._words = _words;
+        outputObj._trainingCount = _trainingCount;
+        outputObj._totalWords = _totalWords;
+        outputObj._totalCats = _totalCats;
+        contents += JSON.stringify(outputObj);
+        // var words = _sortWords().slice(0,100);
+        // words.forEach(function(word) {
+        //     contents += "\n" + word.word + ": " + word.count;
+        // });
+        // contents += "========";
 
         return contents;
+    }
+
+    /**
+     * Returns an array of the top n words (default 100)
+     * @param {Number} n The number of top words to return
+     */
+    function topWords(n) {
+        n = n || 100;
+
+        var words = _sortWords().slice(0,n),
+            rawWords = [];
+
+        words.forEach(function(word) {
+            rawWords.push(word.word);
+        });
+
+        return rawWords;
     }
 
     exports.incrementWord = incrementWord;
@@ -188,4 +241,7 @@
     exports.wordsInCatCount = wordsInCatCount;
     exports.totalWordCount = totalWordCount;
     exports.dump = dump;
+    exports.topWords = topWords;
+    exports.init = initialize;
+    exports.getWordCount = getWordCount;
 }());
