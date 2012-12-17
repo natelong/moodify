@@ -14,9 +14,11 @@
     classifier.load();
 
     connector.init("GuildWars2", function(data) {
-        data.slice(0,10).forEach(function(comment) {
-            console.log("\n", comment.body.length);
-            console.log(classifier.classify(comment.body));
+        data.slice(0,100).forEach(function(comment) {
+            var category = classifier.classify(comment.body);
+            if(category !== "unknown") {
+                console.log("\n%s:\n%s", category, comment.body);
+            }
         });
     });
 }());

@@ -8,7 +8,8 @@
         categories = {},
         settings = {
             probability: 0.5,
-            filename: "data" + path.sep + "cache.json"
+            filename: "data" + path.sep + "cache.json",
+            threshold: 10
         };
 
     /**
@@ -97,7 +98,10 @@
     function classify(text) {
         var categoryNames = Object.keys(categories),
             words = _toWords(text),
-            probabilities = {};
+            probabilities = {},
+            best,
+            maxProb = 0,
+            secondMaxProb = 0;
 
         // do a pass for each category, so we can get the probabilities for each category
         categoryNames.forEach(function(passCategoryName) {
@@ -105,26 +109,26 @@
 
             // get the probability for each word
             words.forEach(function(word) {
-                var denominator = 0,
-                    // the numerator is just the probability that a single word appears in a
-                    //  category, normalized by the probability that a category appears
-                    numerator = _wordInCategoryProbability(word, passCategoryName) *
-                            _categoryProbability(passCategoryName);
-
-                // To build the denominator, we have to find the probability that a word appears
-                //  in each category, also normalized by the probability of that category
-                categoryNames.forEach(function(categoryName) {
-                    denominator += _wordInCategoryProbability(word, categoryName) *
-                            _categoryProbability(categoryName);
-                });
-
-                totalProbability *= (numerator / denominator);
+                totalProbability *= _wordInCategoryProbability(word, passCategoryName) *
+                        _categoryProbability(passCategoryName);
             });
 
             probabilities[passCategoryName] = totalProbability;
         });
 
-        return probabilities;
+        Object.keys(probabilities).forEach(function(category) {
+            if(probabilities[category] > maxProb) {
+                secondMaxProb = maxProb;
+                maxProb = probabilities[category];
+                best = category;
+            }
+        });
+
+        if(maxProb / secondMaxProb > settings.threshold) {
+            return best;
+        } else {
+            return "unknown";
+        }
     }
 
     /**
