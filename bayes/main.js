@@ -1,22 +1,23 @@
-/*global exports, console, require*/
-/**
- * Backend Spec
- *  incrementWord(word, cat)
- *  incrementCategory(cat)
- *  getCategories()
- *  getTrainCount(cat?)
- *  wordsInCatCount(cat, word?)
- */
+/*global require, exports*/
 (function() {
     "use strict";
 
-    var fs = require("fs");
+    var fs = require("fs"),
+        path = require("path"),
+        badWords = fs.readFileSync("./bayes/topWords.json", "utf8"),
+        categories = {},
+        settings = {
+            probability: 0.5,
+            filename: "data" + path.sep + "cache.json"
+        };
 
-    var _backend,
-        _minProb = 0,
-        _weight = 1,
-        _assumedProb = 0.5,
-        _badWords = fs.readFileSync("./bayes/topWords.json", "utf8");
+    /**
+     * @constructor
+     */
+    var Category = function Category() {
+        this.total = 0;
+        this.words = {};
+    };
 
     /**
      * Break a piece of text into its words
@@ -33,7 +34,7 @@
 
         words.forEach(function(word) {
             word = word.toLowerCase();
-            if(_badWords.indexOf(word) === -1 && goodWords.indexOf(word) === -1 && word.length > 0) {
+            if(badWords.indexOf(word) === -1 && goodWords.indexOf(word) === -1 && word.length > 0) {
                 goodWords.push(word);
             }
         });
@@ -42,118 +43,131 @@
     }
 
     /**
-     * Calculate the raw probability that a word matches a category
-     *  defined as P(cat|word)
-     * @param {String} word The word to be categorized
-     * @param {String} cat  The category against which to measure the word
+     * Get the total count of training documents
+     * @returns {Number} The total number of training documents
      */
-    function _wordProb(word, cat) {
-        var wordsInCat = _backend.wordsInCatCount(cat, word),
-            catCount = _backend.getTrainCount(cat),
-            prob = wordsInCat / catCount;
+    function _totalTrainingCount() {
+        var total = 0;
 
-        // console.log("Probability of %s in %s: %s", word, cat, prob || 0.5);
-        return prob || 0.5;
-    }
+        Object.keys(categories).forEach(function(key) {
+            total += categories[key].total;
+        });
 
-    function _catProb(cat) {
-        var catCount = _backend.getTrainCount(cat),
-            totalCount = _backend.getTrainCount(),
-            prob = catCount / totalCount;
-
-        return prob;
+        return total;
     }
 
     /**
-     * Calculate the raw probability that a piece of text matches a category
-     * @param {String} text The text to be classified
-     * @param {String} cat  The category against which the text should be measured
+     * Increment the count of a word in a category
+     * @param {String} word     The word to be incremented
+     * @param {String} category The category to increment the word in
      */
-    function _textCatProb(text, cat) {
-        var words = _toWords(text),
-            prob = 1;
-
-        words.forEach(function(word) {
-            prob *= _wordProb(word, cat);
-        });
-
-        prob *= _catProb(cat);
-
-        // console.log("Final probability of text in %s: %s", cat, prob);
-        return prob;
-    }
-
-    /**
-     * Get the scores for a body of text in each category
-     * @param {String} text The text to be classified
-     * @returns {Object}    An object map of categories to probabilities
-     */
-    function _catScores(text) {
-        var cats = _backend.getCategories(),
-            probs = {},
-            catsProb = 1;
-
-        cats.forEach(function(cat) {
-            catsProb *= _catProb(cat);
-        });
-
-        cats.forEach(function(cat) {
-            probs[cat] = _textCatProb(text, cat) / catsProb;
-        });
-
-        return probs;
-    }
-
-    /**
-     * Classify a given piece of text to find the probability
-     *  that it falls into each category of text
-     * @param {String} text The text to be classified
-     */
-    function classify(text) {
-        var maxProb = 0,
-            best,
-            scores,
-            threshold = 0.2;
-
-        scores = _catScores(text);
-
-        Object.keys(scores).forEach(function(key) {
-            if(scores[key] > maxProb) {
-                maxProb = scores[key];
-                best = key;
-            }
-        });
-
-        if(maxProb > threshold) {
-            return best;
+    function _incrementWord(word, category) {
+        var categoryObject = categories[category];
+        if(word in categoryObject) {
+            categoryObject[word]++;
         } else {
-            return "unknown";
+            categoryObject[word] = 1;
         }
     }
 
     /**
-     * Train the classifier on a given piece of text
-     * @param {String} category The category to which a piece of text should belong
-     * @param {String} text     The text to assign to the category
+     * Find the probability that a word falls into a given category
+     * @param {String} word     The word to test
+     * @param {String} category The name of the category
+     * @param {number} The probability that a word falls into a given category
      */
-    function train(category, text) {
-        var words = _toWords(text);
-        words.forEach(function(word) {
-            _backend.incrementWord(word, category);
-        });
-
-        _backend.incrementCategory(category);
+    function _wordInCategoryProbability(word, category) {
+        return (categories[category][word] / categories[category].total) || settings.probability;
     }
 
     /**
-     * Initialize the classifier with the given backend
-     * @param {Object} backend The storage engine to use for the classification data
+     * Find the overall probability that a any body of text falls into a given category
+     * @param {String} category The name of the category
+     * @returns {Number} The probability that any body of text falls into the category
      */
-    function init(backend) {
-        _backend = backend;
+    function _categoryProbability(category) {
+        return categories[category].total / _totalTrainingCount();
+    }
+
+    /**
+     * Find the class that a given body of text belongs to
+     * @param {String} text The text
+     * @returns {Object} A hash relating category names to their probabilities for the given text
+     */
+    function classify(text) {
+        var categoryNames = Object.keys(categories),
+            words = _toWords(text),
+            probabilities = {};
+
+        // do a pass for each category, so we can get the probabilities for each category
+        categoryNames.forEach(function(passCategoryName) {
+            var totalProbability = 1;
+
+            // get the probability for each word
+            words.forEach(function(word) {
+                var denominator = 0,
+                    // the numerator is just the probability that a single word appears in a
+                    //  category, normalized by the probability that a category appears
+                    numerator = _wordInCategoryProbability(word, passCategoryName) *
+                            _categoryProbability(passCategoryName);
+
+                // To build the denominator, we have to find the probability that a word appears
+                //  in each category, also normalized by the probability of that category
+                categoryNames.forEach(function(categoryName) {
+                    denominator += _wordInCategoryProbability(word, categoryName) *
+                            _categoryProbability(categoryName);
+                });
+
+                totalProbability *= (numerator / denominator);
+            });
+
+            probabilities[passCategoryName] = totalProbability;
+        });
+
+        return probabilities;
+    }
+
+    /**
+     * Train the system that a specific text falls into a given category
+     * @param {String} text     The text to be classified
+     * @param {String} category The category to classify the text under
+     */
+    function train(text, category) {
+        var words = _toWords(text);
+
+        if(!(category in categories)) {
+            categories[category] = new Category();
+        }
+
+        categories[category].total++;
+
+        words.forEach(function(word) {
+            _incrementWord(word, category);
+        });
+    }
+
+    /**
+     * Dumps the category data to file
+     * @param {String?} filename The name of the output file, relative to the current working dir
+     */
+    function dump(filename) {
+        filename = filename || settings.filename;
+
+        fs.writeFileSync("." + path.sep + filename, JSON.stringify(categories), "utf8");
+    }
+
+    /**
+     * Loads the category data from a file
+     * @param {String?} filename The name of the input file, relative to the current working dir
+     */
+    function load(filename) {
+        filename = filename || settings.filename;
+
+        categories = JSON.parse(fs.readFileSync("." + path.sep + filename, "utf8"));
     }
 
     exports.train = train;
-    exports.init = init;
     exports.classify = classify;
+    exports.dump = dump;
+    exports.load = load;
 }());

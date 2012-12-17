@@ -1,7 +1,7 @@
 /*global require, exports, console*/
 (function() {
     "use strict";
-    var request = require("../simplerequests.js"),
+    var request = require("../util/simplerequests.js"),
         root = "http://www.reddit.com/r/",
         suffix = "/comments.json?sort=new&limit=100",
         comments = [];
