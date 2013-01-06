@@ -35,7 +35,9 @@
 
         words.forEach(function(word) {
             word = word.toLowerCase();
-            if(badWords.indexOf(word) === -1 && goodWords.indexOf(word) === -1 && word.length > 0) {
+            if(badWords.indexOf(word) === -1 &&
+                    goodWords.indexOf(word) === -1 &&
+                    word.length > 0) {
                 goodWords.push(word);
             }
         });
